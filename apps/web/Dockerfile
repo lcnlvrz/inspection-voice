@@ -12,15 +12,9 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then npm ci --legacy-peer-deps; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+RUN npm i -g pnpm
 
+RUN pnpm install
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -30,6 +24,8 @@ ARG GOOGLE_API_KEY
 
 ENV OPEN_AI_API_KEY=${OPEN_AI_API_KEY}
 ENV GOOGLE_API_KEY=${GOOGLE_API_KEY}
+
+RUN npm i -g pnpm
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -44,12 +40,7 @@ RUN touch .env
 RUN echo "OPEN_AI_API_KEY=${OPEN_AI_API_KEY}" >> .env
 RUN echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> .env
 
-RUN \
-  if [ -f yarn.lock ]; then yarn run build; \
-  elif [ -f package-lock.json ]; then npm run build --legacy-peer-deps; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm run build; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+RUN pnpm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
