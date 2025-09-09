@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:23-alpine AS base
 
 ARG OPEN_AI_API_KEY
 ARG GOOGLE_API_KEY
@@ -6,17 +6,13 @@ ARG GOOGLE_API_KEY
 ENV OPEN_AI_API_KEY=${OPEN_AI_API_KEY}
 ENV GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
-# Install dependencies only when needed
-FROM base AS deps
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN apk update
 RUN apk add --no-cache libc6-compat
-WORKDIR /app
+RUN corepack enable && corepack prepare pnpm
 
-RUN npm i -g pnpm
-
-RUN pnpm install
-
-# Rebuild the source code only when needed
 FROM base AS builder
 
 ARG OPEN_AI_API_KEY
@@ -25,50 +21,41 @@ ARG GOOGLE_API_KEY
 ENV OPEN_AI_API_KEY=${OPEN_AI_API_KEY}
 ENV GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
-RUN npm i -g pnpm
+WORKDIR /app
+
+RUN pnpm install --global turbo
+COPY . .
+RUN turbo prune --scope=web --docker
+
+FROM base AS installer
+
+ARG OPEN_AI_API_KEY
+ARG GOOGLE_API_KEY
+
+ENV OPEN_AI_API_KEY=${OPEN_AI_API_KEY}
+ENV GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
 
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-# Uncomment the following line in case you want to disable telemetry during the build.
-# ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=builder /app/out/json/ .
+RUN pnpm install --frozen-lockfile
+COPY --from=builder /app/out/full/ .
 
-RUN touch .env 
+RUN touch .env
 RUN echo "OPEN_AI_API_KEY=${OPEN_AI_API_KEY}" >> .env
 RUN echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> .env
 
-RUN pnpm run build
+RUN pnpm turbo build
 
-# Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
 
-ENV NODE_ENV=production
-# Uncomment the following line in case you want to disable telemetry during runtime.
-# ENV NEXT_TELEMETRY_DISABLED=1
-
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
-
-COPY --from=builder /app/public ./public
-
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
-
 USER nextjs
 
-EXPOSE 3005
+COPY --from=installer --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=installer --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=installer --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 
-ENV PORT=3005
-
-# server.js is created by next build from the standalone output
-# https://nextjs.org/docs/pages/api-reference/config/next-config-js/output
-ENV HOSTNAME="0.0.0.0"
-CMD ["node", "server.js", "--port", "3005"]
+CMD ["node", "apps/web/server.js"]
