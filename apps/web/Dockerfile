@@ -41,9 +41,9 @@ COPY --from=builder /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=builder /app/out/full/ .
 
-RUN touch .env
-RUN echo "OPEN_AI_API_KEY=${OPEN_AI_API_KEY}" >> .env
-RUN echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> .env
+RUN touch /app/apps/web/.env
+RUN echo "OPEN_AI_API_KEY=${OPEN_AI_API_KEY}" >> /app/apps/web/.env
+RUN echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> /app/apps/web/.env
 
 RUN pnpm turbo build
 
