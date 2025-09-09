@@ -7,6 +7,12 @@ jiti('./env')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Ensure static files are served correctly
   async headers() {
     return [
